@@ -1,100 +1,88 @@
 import { Transaction } from '@/app/types'
 
 export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
-  // Dynamic import to avoid build-time issues with pdf-parse
-  const pdf = (await import('pdf-parse')).default
-  
-  const data = await pdf(buffer)
-  const text = data.text
-  
-  const transactions: Transaction[] = []
-  const lines = text.split('\n')
-  
-  // More flexible date pattern for Kotak format (DD/MM/YYYY with optional time)
-  const datePattern = /(\d{2}\/\d{2}\/\d{4})/
-  const amountPattern = /(?:^|[\s,])(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(?:[\s,]|$)/g
-  
-  let inTransactionSection = false
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+  try {
+    const pdf = (await import('pdf-parse')).default
+    const data = await pdf(buffer)
+    const text = data.text
     
-    // Detect when we've reached the transaction section
-    if (line.includes('Date') && line.includes('Description') && line.includes('Balance')) {
-      inTransactionSection = true
-      continue
+    console.log('PDF text extracted, length:', text.length)
+    console.log('First 500 chars:', text.substring(0, 500))
+    
+    if (!text || text.length < 50) {
+      throw new Error('PDF appears to be empty or unreadable')
     }
     
-    // Skip header and non-transaction lines
-    if (!inTransactionSection || !line || line.length < 10) continue
+    const transactions: Transaction[] = []
+    const lines = text.split('\n')
     
-    const dateMatch = line.match(datePattern)
-    if (!dateMatch) continue
+    console.log('Total lines:', lines.length)
     
-    // Extract all numbers from the line
-    const amounts: number[] = []
-    let match
-    const amountRegex = /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+    // Look for lines with dates in DD/MM/YYYY format
+    const datePattern = /(\d{2}\/\d{2}\/\d{4})/
     
-    while ((match = amountRegex.exec(line)) !== null) {
-      const amount = parseFloat(match[1].replace(/,/g, ''))
-      if (!isNaN(amount) && amount > 0) {
-        amounts.push(amount)
-      }
-    }
+    let transactionCount = 0
     
-    if (amounts.length < 1) continue
-    
-    const date = normalizeDate(dateMatch[1])
-    
-    // Get description - text between date and first amount
-    const dateEndPos = line.indexOf(dateMatch[1]) + dateMatch[1].length
-    const firstAmountPos = line.indexOf(amounts[0].toLocaleString('en-IN'))
-    let description = line.substring(dateEndPos, firstAmountPos > dateEndPos ? firstAmountPos : line.length)
-    description = description.trim().substring(0, 100)
-    
-    // Kotak format: Last amount is always balance
-    // If 3 amounts: withdrawal, deposit, balance
-    // If 2 amounts: transaction amount, balance
-    // If 1 amount: balance only
-    
-    let debit = 0
-    let credit = 0
-    let balance = amounts[amounts.length - 1] // Last amount is always balance
-    
-    if (amounts.length === 3) {
-      // Has both withdrawal and deposit
-      debit = amounts[0]
-      credit = amounts[1]
-    } else if (amounts.length === 2) {
-      // Has one transaction amount and balance
-      const txnAmount = amounts[0]
+    for (const line of lines) {
+      if (!line || line.trim().length < 10) continue
       
-      // Determine if it's debit or credit based on keywords
-      const lowerLine = line.toLowerCase()
-      if (lowerLine.includes('deposit') || lowerLine.includes('credit') || 
-          lowerLine.includes('cr') || lowerLine.includes('salary') ||
-          lowerLine.includes('interest')) {
-        credit = txnAmount
-      } else {
-        debit = txnAmount
+      const dateMatch = line.match(datePattern)
+      if (!dateMatch) continue
+      
+      // Extract all numbers (amounts)
+      const numberPattern = /\d{1,3}(?:,\d{3})*(?:\.\d{2})?/g
+      const numbers = line.match(numberPattern)
+      
+      if (!numbers || numbers.length < 1) continue
+      
+      const amounts = numbers.map(n => parseFloat(n.replace(/,/g, ''))).filter(a => !isNaN(a) && a > 0)
+      
+      if (amounts.length === 0) continue
+      
+      const date = normalizeDate(dateMatch[1])
+      const balance = amounts[amounts.length - 1]
+      
+      let debit = 0
+      let credit = 0
+      
+      // Simple heuristic: if there are 3+ amounts, first two might be withdrawal/deposit
+      if (amounts.length >= 3) {
+        debit = amounts[amounts.length - 3]
+        credit = amounts[amounts.length - 2]
+      } else if (amounts.length === 2) {
+        // Check keywords to determine debit/credit
+        if (line.toLowerCase().includes('deposit') || 
+            line.toLowerCase().includes('credit') || 
+            line.toLowerCase().includes('salary')) {
+          credit = amounts[0]
+        } else {
+          debit = amounts[0]
+        }
       }
+      
+      const description = line.substring(dateMatch.index! + 10, Math.min(line.length, dateMatch.index! + 60)).trim()
+      
+      transactions.push({
+        date,
+        description,
+        debit,
+        credit,
+        balance,
+      })
+      
+      transactionCount++
     }
     
-    transactions.push({
-      date,
-      description,
-      debit,
-      credit,
-      balance,
-    })
+    console.log('Transactions found:', transactionCount)
+    
+    return transactions
+  } catch (error: any) {
+    console.error('PDF parsing error:', error)
+    throw new Error(`PDF parsing failed: ${error.message}`)
   }
-  
-  return transactions
 }
 
 function normalizeDate(dateStr: string): string {
-  // Handle DD/MM/YYYY format from Kotak
   const parts = dateStr.split('/')
   if (parts.length === 3) {
     const [day, month, year] = parts
