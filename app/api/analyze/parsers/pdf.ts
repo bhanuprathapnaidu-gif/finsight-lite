@@ -4,7 +4,6 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   try {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js')
     
-    // Disable worker to avoid serverless issues
     pdfjsLib.GlobalWorkerOptions.workerSrc = ''
     
     const loadingTask = pdfjsLib.getDocument({
@@ -77,9 +76,38 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
         }
       }
       
-      const description = line
-        .substring(dateMatch.index! + 10, Math.min(line.length, dateMatch.index! + 80))
-        .trim()
-        .substring(0, 100)
+      const descStartPos = dateMatch.index ? dateMatch.index + 10 : 0
+      const descEndPos = Math.min(line.length, descStartPos + 80)
+      const description = line.substring(descStartPos, descEndPos).trim().substring(0, 100)
       
       transactions.push({
+        date,
+        description,
+        debit,
+        credit,
+        balance,
+      })
+    }
+    
+    console.log('Transactions found:', transactions.length)
+    
+    if (transactions.length === 0) {
+      throw new Error('No transactions found in the PDF')
+    }
+    
+    return transactions
+    
+  } catch (error: any) {
+    console.error('PDF parsing error:', error)
+    throw new Error('PDF parsing failed: ' + error.message)
+  }
+}
+
+function normalizeDate(dateStr: string): string {
+  const parts = dateStr.split('/')
+  if (parts.length === 3) {
+    const [day, month, year] = parts
+    return year + '-' + month.padStart(2, '0') + '-' + day.padStart(2, '0')
+  }
+  return dateStr
+}
