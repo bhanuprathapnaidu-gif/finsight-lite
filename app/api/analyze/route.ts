@@ -15,30 +15,48 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    console.log('Processing file:', file.name, 'Size:', file.size, 'Type:', file.type)
+
     const buffer = Buffer.from(await file.arrayBuffer())
     const fileType = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'
     
+    console.log('File type detected:', fileType)
+    
     let transactions
-    if (fileType === 'pdf') {
-      transactions = await parsePDF(buffer)
-    } else {
-      transactions = await parseCSV(buffer.toString('utf-8'))
-    }
-
-    if (transactions.length === 0) {
+    try {
+      if (fileType === 'pdf') {
+        console.log('Parsing PDF...')
+        transactions = await parsePDF(buffer)
+      } else {
+        console.log('Parsing CSV...')
+        transactions = await parseCSV(buffer.toString('utf-8'))
+      }
+      console.log('Transactions parsed:', transactions.length)
+    } catch (parseError: any) {
+      console.error('Parse error:', parseError)
       return NextResponse.json(
-        { error: 'No transactions found in file' },
+        { error: `Failed to parse file: ${parseError.message}` },
         { status: 400 }
       )
     }
 
+    if (!transactions || transactions.length === 0) {
+      console.log('No transactions found')
+      return NextResponse.json(
+        { error: 'No transactions found in file. Please ensure the file contains transaction data in a supported format.' },
+        { status: 400 }
+      )
+    }
+
+    console.log('Analyzing transactions...')
     const analysisResult = analyzeTransactions(transactions, file.name)
+    console.log('Analysis complete')
     
     return NextResponse.json(analysisResult)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Analysis error:', error)
     return NextResponse.json(
-      { error: 'Failed to analyze file' },
+      { error: `Failed to analyze file: ${error.message}` },
       { status: 500 }
     )
   }
