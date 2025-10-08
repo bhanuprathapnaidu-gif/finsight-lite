@@ -2,19 +2,26 @@ import { Transaction } from '@/app/types'
 
 export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   try {
-    // Use pdf.js-extract instead of pdf-parse (works better in serverless)
-    const PDFExtract = (await import('pdf.js-extract')).PDFExtract
-    const pdfExtract = new PDFExtract()
+    // Import pdfjs-dist (serverless compatible)
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js')
     
-    const data = await pdfExtract.extractBuffer(buffer)
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+    })
     
-    const transactions: Transaction[] = []
+    const pdf = await loadingTask.promise
+    
+    let allText = ''
     
     // Extract text from all pages
-    let allText = ''
-    for (const page of data.pages) {
-      for (const item of page.content) {
-        if (item.str) {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const textContent = await page.getTextContent()
+      
+      for (const item of textContent.items) {
+        if ('str' in item) {
           allText += item.str + ' '
         }
       }
@@ -22,8 +29,12 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
     }
     
     console.log('PDF extracted, text length:', allText.length)
+    console.log('First 500 chars:', allText.substring(0, 500))
     
+    const transactions: Transaction[] = []
     const lines = allText.split('\n')
+    
+    // Date pattern for DD/MM/YYYY format
     const datePattern = /(\d{2}\/\d{2}\/\d{4})/
     
     for (const line of lines) {
@@ -50,10 +61,12 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
       let debit = 0
       let credit = 0
       
+      // Kotak format: if 3+ amounts, likely withdrawal, deposit, balance
       if (amounts.length >= 3) {
         debit = amounts[amounts.length - 3]
         credit = amounts[amounts.length - 2]
       } else if (amounts.length === 2) {
+        // Determine debit/credit from keywords
         const lowerLine = line.toLowerCase()
         if (lowerLine.includes('deposit') || 
             lowerLine.includes('credit') || 
@@ -81,6 +94,11 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
     }
     
     console.log('Transactions found:', transactions.length)
+    
+    if (transactions.length === 0) {
+      throw new Error('No transactions found. The PDF may be in an unsupported format.')
+    }
+    
     return transactions
     
   } catch (error: any) {
