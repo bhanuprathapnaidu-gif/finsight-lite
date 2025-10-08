@@ -10,32 +10,71 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   const transactions: Transaction[] = []
   const lines = text.split('\n')
   
-  const datePattern = /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/
-  const amountPattern = /[\d,]+\.\d{2}/g
+  // More flexible date pattern for Kotak format (DD/MM/YYYY with optional time)
+  const datePattern = /(\d{2}\/\d{2}\/\d{4})/
+  const amountPattern = /(?:^|[\s,])(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(?:[\s,]|$)/g
   
-  for (const line of lines) {
+  let inTransactionSection = false
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    
+    // Detect when we've reached the transaction section
+    if (line.includes('Date') && line.includes('Description') && line.includes('Balance')) {
+      inTransactionSection = true
+      continue
+    }
+    
+    // Skip header and non-transaction lines
+    if (!inTransactionSection || !line || line.length < 10) continue
+    
     const dateMatch = line.match(datePattern)
     if (!dateMatch) continue
     
-    const amounts = line.match(amountPattern)
-    if (!amounts || amounts.length < 2) continue
+    // Extract all numbers from the line
+    const amounts: number[] = []
+    let match
+    const amountRegex = /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
     
-    const parseAmount = (str: string) => parseFloat(str.replace(/,/g, ''))
+    while ((match = amountRegex.exec(line)) !== null) {
+      const amount = parseFloat(match[1].replace(/,/g, ''))
+      if (!isNaN(amount) && amount > 0) {
+        amounts.push(amount)
+      }
+    }
+    
+    if (amounts.length < 1) continue
     
     const date = normalizeDate(dateMatch[1])
-    const description = line.substring(0, 50).trim()
     
-    let debit = 0, credit = 0, balance = 0
+    // Get description - text between date and first amount
+    const dateEndPos = line.indexOf(dateMatch[1]) + dateMatch[1].length
+    const firstAmountPos = line.indexOf(amounts[0].toLocaleString('en-IN'))
+    let description = line.substring(dateEndPos, firstAmountPos > dateEndPos ? firstAmountPos : line.length)
+    description = description.trim().substring(0, 100)
     
-    if (amounts.length >= 3) {
-      debit = parseAmount(amounts[0])
-      credit = parseAmount(amounts[1])
-      balance = parseAmount(amounts[2])
+    // Kotak format: Last amount is always balance
+    // If 3 amounts: withdrawal, deposit, balance
+    // If 2 amounts: transaction amount, balance
+    // If 1 amount: balance only
+    
+    let debit = 0
+    let credit = 0
+    let balance = amounts[amounts.length - 1] // Last amount is always balance
+    
+    if (amounts.length === 3) {
+      // Has both withdrawal and deposit
+      debit = amounts[0]
+      credit = amounts[1]
     } else if (amounts.length === 2) {
-      const txnAmount = parseAmount(amounts[0])
-      balance = parseAmount(amounts[1])
+      // Has one transaction amount and balance
+      const txnAmount = amounts[0]
       
-      if (line.toLowerCase().includes('cr') || line.toLowerCase().includes('credit')) {
+      // Determine if it's debit or credit based on keywords
+      const lowerLine = line.toLowerCase()
+      if (lowerLine.includes('deposit') || lowerLine.includes('credit') || 
+          lowerLine.includes('cr') || lowerLine.includes('salary') ||
+          lowerLine.includes('interest')) {
         credit = txnAmount
       } else {
         debit = txnAmount
@@ -55,12 +94,10 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
 }
 
 function normalizeDate(dateStr: string): string {
-  const parts = dateStr.split(/[/-]/)
+  // Handle DD/MM/YYYY format from Kotak
+  const parts = dateStr.split('/')
   if (parts.length === 3) {
-    let [day, month, year] = parts
-    if (year.length === 2) {
-      year = '20' + year
-    }
+    const [day, month, year] = parts
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
   }
   return dateStr
