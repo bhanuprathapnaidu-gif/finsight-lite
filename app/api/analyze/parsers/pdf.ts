@@ -1,7 +1,9 @@
-import pdf from 'pdf-parse'
 import { Transaction } from '@/app/types'
 
 export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
+  // Dynamic import to avoid build-time issues with pdf-parse
+  const pdf = (await import('pdf-parse')).default
+  
   const data = await pdf(buffer)
   const text = data.text
   
