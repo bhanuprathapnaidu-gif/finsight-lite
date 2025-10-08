@@ -2,26 +2,29 @@ import { Transaction } from '@/app/types'
 
 export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   try {
-    const pdf = (await import('pdf-parse')).default
-    const data = await pdf(buffer)
-    const text = data.text
+    // Use pdf.js-extract instead of pdf-parse (works better in serverless)
+    const PDFExtract = (await import('pdf.js-extract')).PDFExtract
+    const pdfExtract = new PDFExtract()
     
-    console.log('PDF text extracted, length:', text.length)
-    console.log('First 500 chars:', text.substring(0, 500))
-    
-    if (!text || text.length < 50) {
-      throw new Error('PDF appears to be empty or unreadable')
-    }
+    const data = await pdfExtract.extractBuffer(buffer)
     
     const transactions: Transaction[] = []
-    const lines = text.split('\n')
     
-    console.log('Total lines:', lines.length)
+    // Extract text from all pages
+    let allText = ''
+    for (const page of data.pages) {
+      for (const item of page.content) {
+        if (item.str) {
+          allText += item.str + ' '
+        }
+      }
+      allText += '\n'
+    }
     
-    // Look for lines with dates in DD/MM/YYYY format
+    console.log('PDF extracted, text length:', allText.length)
+    
+    const lines = allText.split('\n')
     const datePattern = /(\d{2}\/\d{2}\/\d{4})/
-    
-    let transactionCount = 0
     
     for (const line of lines) {
       if (!line || line.trim().length < 10) continue
@@ -35,7 +38,9 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
       
       if (!numbers || numbers.length < 1) continue
       
-      const amounts = numbers.map(n => parseFloat(n.replace(/,/g, ''))).filter(a => !isNaN(a) && a > 0)
+      const amounts = numbers
+        .map(n => parseFloat(n.replace(/,/g, '')))
+        .filter(a => !isNaN(a) && a > 0)
       
       if (amounts.length === 0) continue
       
@@ -45,22 +50,26 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
       let debit = 0
       let credit = 0
       
-      // Simple heuristic: if there are 3+ amounts, first two might be withdrawal/deposit
       if (amounts.length >= 3) {
         debit = amounts[amounts.length - 3]
         credit = amounts[amounts.length - 2]
       } else if (amounts.length === 2) {
-        // Check keywords to determine debit/credit
-        if (line.toLowerCase().includes('deposit') || 
-            line.toLowerCase().includes('credit') || 
-            line.toLowerCase().includes('salary')) {
+        const lowerLine = line.toLowerCase()
+        if (lowerLine.includes('deposit') || 
+            lowerLine.includes('credit') || 
+            lowerLine.includes('cr') ||
+            lowerLine.includes('salary') ||
+            lowerLine.includes('interest')) {
           credit = amounts[0]
         } else {
           debit = amounts[0]
         }
       }
       
-      const description = line.substring(dateMatch.index! + 10, Math.min(line.length, dateMatch.index! + 60)).trim()
+      const description = line
+        .substring(dateMatch.index! + 10, Math.min(line.length, dateMatch.index! + 80))
+        .trim()
+        .substring(0, 100)
       
       transactions.push({
         date,
@@ -69,13 +78,11 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
         credit,
         balance,
       })
-      
-      transactionCount++
     }
     
-    console.log('Transactions found:', transactionCount)
-    
+    console.log('Transactions found:', transactions.length)
     return transactions
+    
   } catch (error: any) {
     console.error('PDF parsing error:', error)
     throw new Error(`PDF parsing failed: ${error.message}`)
