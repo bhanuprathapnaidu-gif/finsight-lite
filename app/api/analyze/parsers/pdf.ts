@@ -4,14 +4,12 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   try {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js')
     
+    // Disable worker for serverless compatibility
     pdfjsLib.GlobalWorkerOptions.workerSrc = ''
     
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(buffer),
       useSystemFonts: true,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      disableWorker: true,
     })
     
     const pdf = await loadingTask.promise
