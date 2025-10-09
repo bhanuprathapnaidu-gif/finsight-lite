@@ -1,31 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ChartConfiguration,
-} from 'chart.js'
 import { MonthlyData } from '../types'
-
-// Register ALL Chart.js components once
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-)
 
 interface TransactionChartProps {
   monthlyData: MonthlyData[]
@@ -33,95 +9,124 @@ interface TransactionChartProps {
 
 export default function TransactionChart({ monthlyData }: TransactionChartProps) {
   const chartRef = useRef<HTMLCanvasElement>(null)
-  const chartInstanceRef = useRef<ChartJS | null>(null)
+  const chartInstanceRef = useRef<any>(null)
 
   useEffect(() => {
-    if (!chartRef.current) return
+    let mounted = true
 
-    // Destroy previous chart instance if it exists
-    if (chartInstanceRef.current) {
-      chartInstanceRef.current.destroy()
-    }
+    const loadChart = async () => {
+      if (!chartRef.current || !mounted) return
 
-    const ctx = chartRef.current.getContext('2d')
-    if (!ctx) return
+      // Dynamically import Chart.js to avoid SSR issues
+      const ChartJS = (await import('chart.js')).Chart
+      const {
+        CategoryScale,
+        LinearScale,
+        PointElement,
+        LineElement,
+        BarElement,
+        Title,
+        Tooltip,
+        Legend,
+      } = await import('chart.js')
 
-    const config: ChartConfiguration = {
-      type: 'bar',
-      data: {
-        labels: monthlyData.map((d) => d.month),
-        datasets: [
-          {
-            type: 'bar',
-            label: 'Income',
-            data: monthlyData.map((d) => d.totalCredits),
-            backgroundColor: 'rgba(34, 197, 94, 0.7)',
-            borderColor: 'rgb(34, 197, 94)',
-            borderWidth: 1,
-            order: 2,
-          },
-          {
-            type: 'bar',
-            label: 'Expenses',
-            data: monthlyData.map((d) => d.totalDebits),
-            backgroundColor: 'rgba(239, 68, 68, 0.7)',
-            borderColor: 'rgb(239, 68, 68)',
-            borderWidth: 1,
-            order: 2,
-          },
-          {
-            type: 'line',
-            label: 'Balance',
-            data: monthlyData.map((d) => d.closingBalance),
-            borderColor: 'rgb(59, 130, 246)',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            borderWidth: 2,
-            tension: 0.4,
-            order: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: {
-          mode: 'index',
-          intersect: false,
+      // Register components
+      ChartJS.register(
+        CategoryScale,
+        LinearScale,
+        PointElement,
+        LineElement,
+        BarElement,
+        Title,
+        Tooltip,
+        Legend
+      )
+
+      // Destroy previous chart if exists
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy()
+      }
+
+      const ctx = chartRef.current.getContext('2d')
+      if (!ctx) return
+
+      chartInstanceRef.current = new ChartJS(ctx, {
+        type: 'bar',
+        data: {
+          labels: monthlyData.map((d) => d.month),
+          datasets: [
+            {
+              type: 'bar',
+              label: 'Income',
+              data: monthlyData.map((d) => d.totalCredits),
+              backgroundColor: 'rgba(34, 197, 94, 0.7)',
+              borderColor: 'rgb(34, 197, 94)',
+              borderWidth: 1,
+              order: 2,
+            },
+            {
+              type: 'bar',
+              label: 'Expenses',
+              data: monthlyData.map((d) => d.totalDebits),
+              backgroundColor: 'rgba(239, 68, 68, 0.7)',
+              borderColor: 'rgb(239, 68, 68)',
+              borderWidth: 1,
+              order: 2,
+            },
+            {
+              type: 'line',
+              label: 'Balance',
+              data: monthlyData.map((d) => d.closingBalance),
+              borderColor: 'rgb(59, 130, 246)',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              borderWidth: 2,
+              tension: 0.4,
+              order: 1,
+            },
+          ],
         },
-        plugins: {
-          legend: {
-            position: 'top',
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
           },
-          title: {
-            display: true,
-            text: 'Monthly Financial Overview',
-            font: {
-              size: 16,
-              weight: 'bold',
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            title: {
+              display: true,
+              text: 'Monthly Financial Overview',
+              font: {
+                size: 16,
+                weight: 'bold',
+              },
             },
           },
-        },
-        scales: {
-          y: {
-            type: 'linear',
-            display: true,
-            position: 'left',
-            beginAtZero: true,
-            ticks: {
-              callback: function (tickValue) {
-                const value = typeof tickValue === 'number' ? tickValue : parseFloat(tickValue as string)
-                return '₹' + (value / 1000).toFixed(0) + 'K'
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              beginAtZero: true,
+              ticks: {
+                callback: function (tickValue) {
+                  const value = typeof tickValue === 'number' ? tickValue : parseFloat(tickValue as string)
+                  return '₹' + (value / 1000).toFixed(0) + 'K'
+                },
               },
             },
           },
         },
-      },
+      })
     }
 
-    chartInstanceRef.current = new ChartJS(ctx, config)
+    loadChart()
 
-    // Cleanup function
     return () => {
+      mounted = false
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy()
         chartInstanceRef.current = null
