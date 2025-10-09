@@ -64,37 +64,37 @@ export default function TransactionChart({ monthlyData }: TransactionChartProps)
         order: 1,
       },
     ],
-  }
+  } as const
 
   const options: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
-      mode: 'index' as const,
+      mode: 'index',
       intersect: false,
     },
     plugins: {
       legend: { 
-        position: 'top' as const 
+        position: 'top' 
       },
       title: {
         display: true,
         text: 'Monthly Financial Overview',
         font: { 
           size: 16, 
-          weight: 'bold' as const 
+          weight: 'bold'
         },
       },
     },
     scales: {
       y: {
-        type: 'linear' as const,
+        type: 'linear',
         display: true,
-        position: 'left' as const,
+        position: 'left',
         beginAtZero: true,
         ticks: {
-          callback: function (tickValue: string | number) {
-            const value = typeof tickValue === 'number' ? tickValue : parseFloat(tickValue)
+          callback: function (tickValue) {
+            const value = typeof tickValue === 'number' ? tickValue : parseFloat(tickValue as string)
             return '₹' + (value / 1000).toFixed(0) + 'K'
           },
         },
