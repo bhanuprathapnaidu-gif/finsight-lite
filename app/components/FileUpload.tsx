@@ -67,7 +67,7 @@ export default function FileUpload({ onFileUpload, isLoading }: FileUploadProps)
           </>
         )}
       </div>
-
+<p className="text-sm text-gray-500">PDF or CSV files (Max 10MB)</p>
       <input
         ref={fileInputRef}
         type="file"
@@ -88,3 +88,4 @@ export default function FileUpload({ onFileUpload, isLoading }: FileUploadProps)
     </div>
   )
 }
+
