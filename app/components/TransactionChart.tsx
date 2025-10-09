@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -10,11 +11,11 @@ import {
   Title,
   Tooltip,
   Legend,
+  ChartConfiguration,
 } from 'chart.js'
-import { Chart } from 'react-chartjs-2'
 import { MonthlyData } from '../types'
 
-// Register Chart.js components
+// Register ALL Chart.js components once
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -31,80 +32,107 @@ interface TransactionChartProps {
 }
 
 export default function TransactionChart({ monthlyData }: TransactionChartProps) {
-  const chartData = {
-    labels: monthlyData.map((d) => d.month),
-    datasets: [
-      {
-        type: 'bar',
-        label: 'Income',
-        data: monthlyData.map((d) => d.totalCredits),
-        backgroundColor: 'rgba(34, 197, 94, 0.7)',
-        borderColor: 'rgb(34, 197, 94)',
-        borderWidth: 1,
-        order: 2,
-      },
-      {
-        type: 'bar',
-        label: 'Expenses',
-        data: monthlyData.map((d) => d.totalDebits),
-        backgroundColor: 'rgba(239, 68, 68, 0.7)',
-        borderColor: 'rgb(239, 68, 68)',
-        borderWidth: 1,
-        order: 2,
-      },
-      {
-        type: 'line',
-        label: 'Balance',
-        data: monthlyData.map((d) => d.closingBalance),
-        borderColor: 'rgb(59, 130, 246)',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        borderWidth: 2,
-        tension: 0.4,
-        order: 1,
-      },
-    ],
-  }
+  const chartRef = useRef<HTMLCanvasElement>(null)
+  const chartInstanceRef = useRef<ChartJS | null>(null)
 
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      mode: 'index',
-      intersect: false,
-    },
-    plugins: {
-      legend: { 
-        position: 'top',
+  useEffect(() => {
+    if (!chartRef.current) return
+
+    // Destroy previous chart instance if it exists
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy()
+    }
+
+    const ctx = chartRef.current.getContext('2d')
+    if (!ctx) return
+
+    const config: ChartConfiguration = {
+      type: 'bar',
+      data: {
+        labels: monthlyData.map((d) => d.month),
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Income',
+            data: monthlyData.map((d) => d.totalCredits),
+            backgroundColor: 'rgba(34, 197, 94, 0.7)',
+            borderColor: 'rgb(34, 197, 94)',
+            borderWidth: 1,
+            order: 2,
+          },
+          {
+            type: 'bar',
+            label: 'Expenses',
+            data: monthlyData.map((d) => d.totalDebits),
+            backgroundColor: 'rgba(239, 68, 68, 0.7)',
+            borderColor: 'rgb(239, 68, 68)',
+            borderWidth: 1,
+            order: 2,
+          },
+          {
+            type: 'line',
+            label: 'Balance',
+            data: monthlyData.map((d) => d.closingBalance),
+            borderColor: 'rgb(59, 130, 246)',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 2,
+            tension: 0.4,
+            order: 1,
+          },
+        ],
       },
-      title: {
-        display: true,
-        text: 'Monthly Financial Overview',
-        font: { 
-          size: 16, 
-          weight: 'bold',
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
         },
-      },
-    },
-    scales: {
-      y: {
-        type: 'linear',
-        display: true,
-        position: 'left',
-        beginAtZero: true,
-        ticks: {
-          callback: function (tickValue: any) {
-            const value = typeof tickValue === 'number' ? tickValue : parseFloat(tickValue)
-            return '₹' + (value / 1000).toFixed(0) + 'K'
+        plugins: {
+          legend: {
+            position: 'top',
+          },
+          title: {
+            display: true,
+            text: 'Monthly Financial Overview',
+            font: {
+              size: 16,
+              weight: 'bold',
+            },
+          },
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            beginAtZero: true,
+            ticks: {
+              callback: function (tickValue) {
+                const value = typeof tickValue === 'number' ? tickValue : parseFloat(tickValue as string)
+                return '₹' + (value / 1000).toFixed(0) + 'K'
+              },
+            },
           },
         },
       },
-    },
-  }
+    }
+
+    chartInstanceRef.current = new ChartJS(ctx, config)
+
+    // Cleanup function
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy()
+        chartInstanceRef.current = null
+      }
+    }
+  }, [monthlyData])
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div style={{ height: '400px' }}>
-        <Chart type="bar" data={chartData as any} options={options as any} />
+        <canvas ref={chartRef}></canvas>
       </div>
     </div>
   )
