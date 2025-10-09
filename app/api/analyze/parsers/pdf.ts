@@ -1,37 +1,15 @@
+import pdf from 'pdf-parse'
 import { Transaction } from '@/app/types'
 
 export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   try {
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js')
+    const data = await pdf(buffer)
+    const text = data.text
     
-    // Disable worker for serverless compatibility
-    pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-    
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buffer),
-      useSystemFonts: true,
-    })
-    
-    const pdf = await loadingTask.promise
-    
-    let allText = ''
-    
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const textContent = await page.getTextContent()
-      
-      for (const item of textContent.items) {
-        if ('str' in item) {
-          allText += item.str + ' '
-        }
-      }
-      allText += '\n'
-    }
-    
-    console.log('PDF extracted successfully, text length:', allText.length)
+    console.log('PDF extracted, text length:', text.length)
     
     const transactions: Transaction[] = []
-    const lines = allText.split('\n')
+    const lines = text.split('\n')
     
     const datePattern = /(\d{2}\/\d{2}\/\d{4})/
     
@@ -66,17 +44,15 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
         if (lowerLine.includes('deposit') || 
             lowerLine.includes('credit') || 
             lowerLine.includes('cr') ||
-            lowerLine.includes('salary') ||
-            lowerLine.includes('interest')) {
+            lowerLine.includes('neft') ||
+            lowerLine.includes('upi')) {
           credit = amounts[0]
         } else {
           debit = amounts[0]
         }
       }
       
-      const descStartPos = dateMatch.index ? dateMatch.index + 10 : 0
-      const descEndPos = Math.min(line.length, descStartPos + 80)
-      const description = line.substring(descStartPos, descEndPos).trim().substring(0, 100)
+      const description = line.substring(dateMatch.index! + 10, Math.min(line.length, dateMatch.index! + 100)).trim()
       
       transactions.push({
         date,
@@ -87,10 +63,10 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
       })
     }
     
-    console.log('Transactions found:', transactions.length)
+    console.log('Transactions parsed:', transactions.length)
     
     if (transactions.length === 0) {
-      throw new Error('No transactions found in the PDF')
+      throw new Error('No transactions found in PDF')
     }
     
     return transactions
@@ -105,7 +81,7 @@ function normalizeDate(dateStr: string): string {
   const parts = dateStr.split('/')
   if (parts.length === 3) {
     const [day, month, year] = parts
-    return year + '-' + month.padStart(2, '0') + '-' + day.padStart(2, '0')
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
   }
   return dateStr
 }
