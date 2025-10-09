@@ -33,8 +33,8 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
       if (!numbers || numbers.length < 1) continue
       
       const amounts = numbers
-        .map(n => parseFloat(n.replace(/,/g, '')))
-        .filter(a => !isNaN(a) && a > 0)
+        .map((n: string) => parseFloat(n.replace(/,/g, '')))
+        .filter((a: number) => !isNaN(a) && a > 0)
       
       if (amounts.length === 0) continue
       
