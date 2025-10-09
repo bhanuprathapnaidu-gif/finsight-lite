@@ -1,15 +1,23 @@
-import pdf from 'pdf-parse'
 import { Transaction } from '@/app/types'
 
 export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
   try {
-    const data = await pdf(buffer)
+    // Lazy load pdf-parse to avoid build-time issues
+    const pdfParse = require('pdf-parse')
+    
+    const data = await pdfParse(buffer)
     const text = data.text
     
     console.log('PDF extracted, text length:', text.length)
     
+    if (!text || text.length < 50) {
+      throw new Error('PDF appears to be empty or unreadable')
+    }
+    
     const transactions: Transaction[] = []
     const lines = text.split('\n')
+    
+    console.log('Total lines:', lines.length)
     
     const datePattern = /(\d{2}\/\d{2}\/\d{4})/
     
@@ -45,28 +53,35 @@ export async function parsePDF(buffer: Buffer): Promise<Transaction[]> {
             lowerLine.includes('credit') || 
             lowerLine.includes('cr') ||
             lowerLine.includes('neft') ||
-            lowerLine.includes('upi')) {
+            lowerLine.includes('imps') ||
+            lowerLine.includes('upi') ||
+            lowerLine.includes('salary') ||
+            lowerLine.includes('interest')) {
           credit = amounts[0]
         } else {
           debit = amounts[0]
         }
       }
       
-      const description = line.substring(dateMatch.index! + 10, Math.min(line.length, dateMatch.index! + 100)).trim()
+      const descStartPos = dateMatch.index ? dateMatch.index + 10 : 0
+      const descEndPos = Math.min(line.length, descStartPos + 100)
+      const description = line.substring(descStartPos, descEndPos).trim()
       
-      transactions.push({
-        date,
-        description,
-        debit,
-        credit,
-        balance,
-      })
+      if (description) {
+        transactions.push({
+          date,
+          description,
+          debit,
+          credit,
+          balance,
+        })
+      }
     }
     
-    console.log('Transactions parsed:', transactions.length)
+    console.log('Transactions found:', transactions.length)
     
     if (transactions.length === 0) {
-      throw new Error('No transactions found in PDF')
+      throw new Error('No transactions found in the PDF. The file may be in an unsupported format or empty.')
     }
     
     return transactions
