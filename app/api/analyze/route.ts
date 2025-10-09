@@ -15,12 +15,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Processing file:', file.name, 'Size:', file.size, 'Type:', file.type)
+    console.log('Processing file:', file.name, 'Size:', file.size)
 
     const buffer = Buffer.from(await file.arrayBuffer())
     const fileType = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'
     
-    console.log('File type detected:', fileType)
+    console.log('File type:', fileType)
     
     let transactions
     try {
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
         console.log('Parsing CSV...')
         transactions = await parseCSV(buffer.toString('utf-8'))
       }
-      console.log('Transactions parsed:', transactions.length)
+      console.log('Transactions found:', transactions.length)
     } catch (parseError: any) {
       console.error('Parse error:', parseError)
       return NextResponse.json(
@@ -41,16 +41,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (!transactions || transactions.length === 0) {
-      console.log('No transactions found')
       return NextResponse.json(
-        { error: 'No transactions found in file. Please ensure the file contains transaction data in a supported format.' },
+        { error: 'No transactions found in file.' },
         { status: 400 }
       )
     }
 
-    console.log('Analyzing transactions...')
     const analysisResult = analyzeTransactions(transactions, file.name)
-    console.log('Analysis complete')
     
     return NextResponse.json(analysisResult)
   } catch (error: any) {
